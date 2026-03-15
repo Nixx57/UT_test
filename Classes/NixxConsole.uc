@@ -307,7 +307,7 @@ function SetPawnRotation (Pawn Target, float Delta)
 		}
 	}
 
-	// SetMyRotation(End,Start,Delta);
+	SetMyRotation(End,Start,Delta);
 }
 
 function Vector MuzzleCorrection (Pawn Target)
@@ -492,7 +492,7 @@ function Vector BulletSpeedCorrection (Pawn Target)
 			{
 				// All PHYS_Falling projectiles get Velocity.Z += 200 on top of aimed direction, plus gravity
 				// ZOffset = net Z deviation of the projectile vs a straight-line path at time ToF
-				GravZ = Me.Region.Zone.ZoneGravity.Z;
+				GravZ = Target.Region.Zone.ZoneGravity.Z;
 				ZOffset = 200.0 * ToF + 0.5 * GravZ * Square(ToF);
 			}
 
