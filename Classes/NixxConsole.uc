@@ -326,12 +326,8 @@ function Vector MuzzleCorrection (Pawn Target)
 
 function Vector GetTargetOffset (Pawn Target)
 {
-	local Vector Start;
-	local Vector End;
-	local Vector vAuto;
+	local Vector Start, End, vAuto, HitLocation, HitNormal, extent;
 	local Actor HitActor;
-
-	local Vector HitLocation, HitNormal;
 
 	Start=MuzzleCorrection(Target);
 	End=Target.Location;
@@ -342,21 +338,36 @@ function Vector GetTargetOffset (Pawn Target)
 	Target.Velocity != vect(0,0,0) &&
 	Target.Velocity.Z == 0)
 	{
-		vAuto.Z = -0.9 * Target.CollisionHeight;
+		vAuto.Z = -0.75 * Target.CollisionHeight;
 	}
 	else
 	{
 		vAuto.Z = 0.5 * Target.CollisionHeight;
 	}
-	
 
-	HitActor = Me.Trace(HitLocation, HitNormal, End + vAuto, Start);
+	if (Me.Weapon != None && (LastFireMode == 1 && !Me.Weapon.bInstantHit) || (LastFireMode == 2 && !Me.Weapon.bAltInstantHit))
+	{
+		if (LastFireMode == 1 && Me.Weapon.ProjectileClass != None)
+		{
+			extent.X = Me.Weapon.ProjectileClass.default.CollisionRadius;
+			extent.Y = Me.Weapon.ProjectileClass.default.CollisionRadius;
+			extent.Z = Me.Weapon.ProjectileClass.default.CollisionHeight;
+		}
+		else if (LastFireMode == 2 && Me.Weapon.AltProjectileClass != None)
+		{
+			extent.X = Me.Weapon.AltProjectileClass.default.CollisionRadius;
+			extent.Y = Me.Weapon.AltProjectileClass.default.CollisionRadius;
+			extent.Z = Me.Weapon.AltProjectileClass.default.CollisionHeight;
+		}
+	}
+
+	HitActor = Me.Trace(HitLocation, HitNormal, End + vAuto, Start, true, extent);
 	if (HitActor != None && (HitActor == Target || HitActor.IsA('Projectile')) ) //if can hit target (and ignore projectile between player and target)
 	{
 		return vAuto;
 	}
 
-	HitActor = Me.Trace(HitLocation, HitNormal, End + AltOffset, Start);
+	HitActor = Me.Trace(HitLocation, HitNormal, End + AltOffset, Start, true, extent);
 	if(HitActor != None && (HitActor == Target || HitActor.IsA('Projectile')))
 	{
 		return AltOffset;
@@ -387,7 +398,7 @@ function Vector CalculateCustomVelocity(Pawn Target)
         }
     }
 
-	if (ValidSamples > 0)
+	if (ValidSamples >= 3)
 	{
 		AverageVelocity = AverageVelocity / ValidSamples;
 	}
@@ -433,7 +444,7 @@ function Vector CalculateCustomAcceleration(Pawn Target)
         }
     }
 
-	if (ValidSamples > 0)
+	if (ValidSamples >= 3)
     {
 		AverageAcceleration = AverageAcceleration / ValidSamples;
     }
