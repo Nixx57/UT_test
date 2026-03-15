@@ -2,7 +2,7 @@
 setlocal
 
 set UT_DIR=C:\UnrealTournament
-set OUTPUT_DIR=C:\UnrealTournament\MyAimbot\export
+set OUTPUT_DIR=C:\UnrealTournament\NixxPackage\UncodeX
 
 echo Starting source code extraction...
 

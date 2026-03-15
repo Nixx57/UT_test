@@ -1,5 +1,5 @@
 cd..
 cd System
-Del MyAimbot.u
+Del NixxPackage.u
 UCC.exe Make
-Pause
+pause
