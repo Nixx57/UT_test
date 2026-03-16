@@ -27,7 +27,7 @@ struct PositionData
     var float Time;
 };
 
-var PositionData PreviousLocations[16];
+var PositionData PreviousLocations[32];
 var int LocationIndex;
 
 // Ladder randomization
@@ -60,14 +60,14 @@ event Tick( float Delta )
 //================================================================================
 // MAIN BOT.
 //================================================================================
-function NixxConsole()
+function ResetLocationBuffer()
 {
 	local int i;
 	LocationIndex = 0;
 	for (i = 0; i < ArrayCount(PreviousLocations); i++)
     {
         PreviousLocations[i].Location = vect(0,0,0);
-        PreviousLocations[i].Time = Me.Level.TimeSeconds;
+        PreviousLocations[i].Time = 0;
     }
 }
 
@@ -94,9 +94,6 @@ function Begin(float Delta)
 		PawnRelated(Delta);
 }
 
-
-
-
 function UpdatePreviousLocations(Pawn Target, float DeltaTime)
 {
 	PreviousLocations[LocationIndex].Location = Target.Location;
@@ -107,6 +104,9 @@ function UpdatePreviousLocations(Pawn Target, float DeltaTime)
 function PawnRelated(float Delta)
 {
 	local Pawn Target;
+	local Pawn OldTarget;
+
+	OldTarget = CurrentTarget;
 
 	if(CurrentTarget != None)
 	{
@@ -154,7 +154,7 @@ function PawnRelated(float Delta)
 				}
 				else if (Target.IsA('FortStandard') && !FortStandard(Target).bTriggerOnly)
 				{
-					if (Me.Level.Game.IsA('Assault') && Me.PlayerReplicationInfo.Team != Assault(Me.Level.Game).Defender.TeamIndex)
+					if (Me.Level.Game != None && Me.Level.Game.IsA('Assault') && Me.PlayerReplicationInfo.Team != Assault(Me.Level.Game).Defender.TeamIndex)
 					{
 						if (CurrentTarget == None || VSize(Target.Location - Me.Location) < VSize(CurrentTarget.Location - Me.Location))
 							CurrentTarget = Target;
@@ -163,6 +163,9 @@ function PawnRelated(float Delta)
 			}
 		}
 	}
+
+	if (CurrentTarget != OldTarget)
+		ResetLocationBuffer();
 
 	if(CurrentTarget != None)
 	{
@@ -216,6 +219,8 @@ function bool VisibleTarget (Pawn Target)
 			}
 		}
 	}
+
+	return false;
 }
 
 function bool ValidTarget (Pawn Target)
@@ -345,7 +350,7 @@ function Vector GetTargetOffset (Pawn Target)
 		vAuto.Z = 0.5 * Target.CollisionHeight;
 	}
 
-	if (Me.Weapon != None && (LastFireMode == 1 && !Me.Weapon.bInstantHit) || (LastFireMode == 2 && !Me.Weapon.bAltInstantHit))
+	if (Me.Weapon != None && ((LastFireMode == 1 && !Me.Weapon.bInstantHit) || (LastFireMode == 2 && !Me.Weapon.bAltInstantHit)))
 	{
 		if (LastFireMode == 1 && Me.Weapon.ProjectileClass != None)
 		{
@@ -381,11 +386,12 @@ function Vector GetTargetOffset (Pawn Target)
 function Vector CalculateCustomVelocity(Pawn Target)
 {
     local Vector Velocity, AverageVelocity;
-    local float TimeDifference;
+    local float TimeDifference, Weight, TotalWeight;
 	local int i, ValidSamples;
     
     AverageVelocity = vect(0,0,0);
 	ValidSamples = 0;
+	TotalWeight = 0;
     
     for(i=0; i < ArrayCount(PreviousLocations)-1; i++)
     {
@@ -393,14 +399,16 @@ function Vector CalculateCustomVelocity(Pawn Target)
     	if (TimeDifference > 0)
     	{
 	    	Velocity = (PreviousLocations[(LocationIndex+i+1)% ArrayCount(PreviousLocations)].Location - PreviousLocations[(LocationIndex+i)% ArrayCount(PreviousLocations)].Location) / TimeDifference;
-	    	AverageVelocity += Velocity;
+			Weight = float(i + 1); // newer samples get higher weight
+	    	AverageVelocity += Velocity * Weight;
+			TotalWeight += Weight;
 			ValidSamples++;
         }
     }
 
 	if (ValidSamples >= 3)
 	{
-		AverageVelocity = AverageVelocity / ValidSamples;
+		AverageVelocity = AverageVelocity / TotalWeight;
 	}
 	else
 	{
@@ -413,11 +421,12 @@ function Vector CalculateCustomVelocity(Pawn Target)
 function Vector CalculateCustomAcceleration(Pawn Target)
 {
     local Vector Acceleration, AverageAcceleration, CurrentVelocity, PreviousVelocity;
-    local float TimeDifferenceCurrent, TimeDifferencePrevious;
+    local float TimeDifferenceCurrent, TimeDifferencePrevious, Weight, TotalWeight;
 	local int i, CurrentDataIndex, PreviousDataIndex, PreviousPreviousDataIndex, ValidSamples;
 
     AverageAcceleration = vect(0,0,0);
 	ValidSamples = 0;
+	TotalWeight = 0;
 
     for(i = 0; i < ArrayCount(PreviousLocations) - 2; i++)
     {
@@ -438,7 +447,9 @@ function Vector CalculateCustomAcceleration(Pawn Target)
                 PreviousVelocity = (PreviousLocations[PreviousDataIndex].Location - PreviousLocations[PreviousPreviousDataIndex].Location) / TimeDifferencePrevious;
 
                 Acceleration = (CurrentVelocity - PreviousVelocity) / ((TimeDifferenceCurrent + TimeDifferencePrevious) / 2);
-                AverageAcceleration += Acceleration;
+				Weight = float(ArrayCount(PreviousLocations) - 1 - i); // i=0 is newest, gets highest weight
+                AverageAcceleration += Acceleration * Weight;
+				TotalWeight += Weight;
 				ValidSamples++;
             }
         }
@@ -446,13 +457,12 @@ function Vector CalculateCustomAcceleration(Pawn Target)
 
 	if (ValidSamples >= 3)
     {
-		AverageAcceleration = AverageAcceleration / ValidSamples;
+		AverageAcceleration = AverageAcceleration / TotalWeight;
     }
     else
     {
         AverageAcceleration = vect(0,0,0);
     }
-
 
     return AverageAcceleration;
 }
@@ -463,20 +473,9 @@ function Vector BulletSpeedCorrection (Pawn Target)
     local float GravZ, ZOffset;
     local Vector Correction, Start, AimSpot, CustomVelocity, CustomAcceleration;
 	local Class<Projectile> ProjectileClass;
+	local int iter;
 
     Start = MuzzleCorrection(Target);
-
-	if ( (LastFireMode == 1) &&  !Me.Weapon.bInstantHit )
-	{
-		ProjectileClass = Me.Weapon.ProjectileClass;
-		BulletSpeed = ProjectileClass.default.speed;
-	}
-
-	if ( (LastFireMode == 2) &&  !Me.Weapon.bAltInstantHit )
-	{
-		ProjectileClass = Me.Weapon.AltProjectileClass;
-		BulletSpeed = ProjectileClass.default.speed;
-	}
 
     if (Me.Weapon != None)
     {
@@ -500,24 +499,36 @@ function Vector BulletSpeedCorrection (Pawn Target)
 			CustomAcceleration = CalculateCustomAcceleration(Target);
 
 			if (ProjectileClass.default.Physics == PHYS_Falling)
-			{
-				// All PHYS_Falling projectiles get Velocity.Z += 200 on top of aimed direction, plus gravity
-				// ZOffset = net Z deviation of the projectile vs a straight-line path at time ToF
 				GravZ = Target.Region.Zone.ZoneGravity.Z;
-				ZOffset = 200.0 * ToF + 0.5 * GravZ * Square(ToF);
+
+			// Iterative ToF refinement (3 passes)
+			AimSpot = Target.Location;
+			for (iter = 0; iter < 3; iter++)
+			{
+				AimSpot = Target.Location + CustomVelocity * ToF + CustomAcceleration * Square(ToF) * 0.5;
+				if (!Me.FastTrace(AimSpot, Start))
+					break;
+				TargetDist = VSize(AimSpot - Start);
+				ToF = TargetDist / BulletSpeed;
 			}
 
-            AimSpot = Target.Location + CustomVelocity*ToF + CustomAcceleration * Square(ToF) * 0.5;
+			Correction = CustomVelocity * ToF + CustomAcceleration * Square(ToF) * 0.5;
 
-			if(Me.FastTrace(AimSpot, Start))
+			// If predicted spot is behind a wall, halve the correction until valid
+			while (!Me.FastTrace(Target.Location + Correction, Start))
 			{
-				TargetDist = VSize(AimSpot - Start);
-				ToF = (ToF + (TargetDist / BulletSpeed)) / 2;
+				Correction *= 0.5;
+				if (VSize(Correction) < 1.0)
+				{
+					Correction = vect(0,0,0);
+					break;
+				}
+			}
 
-				Correction = CustomVelocity * ToF + CustomAcceleration * Square(ToF) * 0.5;
-
-				// Recompute arc compensation with refined ToF
-				if (ZOffset != 0)
+			if (Me.FastTrace(Target.Location + Correction, Start))
+			{
+				// Arc compensation for PHYS_Falling projectiles (+200 Z boost + gravity)
+				if (GravZ != 0)
 				{
 					ZOffset = 200.0 * ToF + 0.5 * GravZ * Square(ToF);
 					Correction.Z -= ZOffset;
@@ -539,13 +550,13 @@ function SetMyRotation (Vector End, Vector Start, float Delta)
 
 	if(bRotateSlow)
 	{
-		Rot=RotateSlow(Normalize(Me.ViewRotation),Rot);
+		Rot=RotateSlow(Normalize(Me.ViewRotation),Rot,Delta);
 	}
 	
 	Me.ViewRotation=Rot;
 }
 
-function Rotator RotateSlow (Rotator RotA, Rotator RotB)
+function Rotator RotateSlow (Rotator RotA, Rotator RotB, float Delta)
 {
 	local Rotator RotC;
 	local int Pitch;
@@ -554,10 +565,15 @@ function Rotator RotateSlow (Rotator RotA, Rotator RotB)
 	local bool Bool1;
 	local bool Bool2;
 	local bool Bool3;
+	local int Step;
 
-	Bool1=Abs(RotA.Pitch - RotB.Pitch) <= MySetSlowSpeed;
-	Bool2=Abs(RotA.Yaw - RotB.Yaw) <= MySetSlowSpeed;
-	Bool3=Abs(RotA.Roll - RotB.Roll) <= MySetSlowSpeed;
+	Step = MySetSlowSpeed * Delta * 60.0; // framerate-independent (normalized to 60fps)
+	if (Step < 1)
+		Step = 1;
+
+	Bool1=Abs(RotA.Pitch - RotB.Pitch) <= Step;
+	Bool2=Abs(RotA.Yaw - RotB.Yaw) <= Step;
+	Bool3=Abs(RotA.Roll - RotB.Roll) <= Step;
 	
 	if ( RotA.Pitch < RotB.Pitch )
 	{
@@ -633,7 +649,7 @@ function Rotator RotateSlow (Rotator RotA, Rotator RotB)
 	
 	if ( !Bool1 )
 	{
-		RotC.Pitch=RotA.Pitch + Pitch * MySetSlowSpeed;
+		RotC.Pitch=RotA.Pitch + Pitch * Step;
 	} 
 	else 
 	{
@@ -642,7 +658,7 @@ function Rotator RotateSlow (Rotator RotA, Rotator RotB)
 	
 	if ( !Bool2 )
 	{
-		RotC.Yaw=RotA.Yaw + Yaw * MySetSlowSpeed;
+		RotC.Yaw=RotA.Yaw + Yaw * Step;
 	} 
 	else 
 	{
@@ -651,7 +667,7 @@ function Rotator RotateSlow (Rotator RotA, Rotator RotB)
 	
 	if ( !Bool3 )
 	{
-		RotC.Roll=RotA.Roll + Roll * MySetSlowSpeed;
+		RotC.Roll=RotA.Roll + Roll * Step;
 	}
 	else 
 	{
