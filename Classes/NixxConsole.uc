@@ -1077,16 +1077,6 @@ exec function ShowOverlay()
 	Msg("bShowOverlay = "$string(bShowOverlay));
 }
 
-// exec function RandomDest()
-// {
-// 	NixxBoss(Me).PathGoal = Me.FindRandomDest().Location;
-// }
-
-// exec function Stop()
-// {
-// 	NixxBoss(Me).PathGoal = vect(0,0,0);
-// }
-
 defaultproperties
 {
 	bAutoAim=True
