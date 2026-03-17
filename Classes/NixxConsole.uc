@@ -10,6 +10,9 @@ var config bool bAimPlayers;
 var config bool bRotateSlow;
 var config bool bDebug;
 var config bool bShowOverlay;
+var config bool bSpawnMonsters;
+
+var float SpawnMonsterTimer;
 
 var PlayerPawn Me;
 var Pawn CurrentTarget;
@@ -53,6 +56,16 @@ event Tick( float Delta )
 
 	Me = Viewport.Actor;
 	CustomLadderInv();
+
+	if (bSpawnMonsters && Me != None)
+	{
+		SpawnMonsterTimer -= Delta;
+		if (SpawnMonsterTimer <= 0)
+		{
+			SpawnMonsterTimer = 10.0;
+			SpawnRandomMonster();
+		}
+	}
 
 	Begin(Delta);
 }
@@ -227,7 +240,7 @@ function bool ValidTarget (Pawn Target)
 {
 	If(Target.IsA('ScriptedPawn')) //If is a monster (Monster Hunt)
 	{
-		if(ScriptedPawn(Target).AttitudeTo(Me) < 4 &&
+		if((ScriptedPawn(Target).AttitudeTo(Me) < 4 && ScriptedPawn(Target).AttitudeTo(Me) != 0) &&
 		!Target.IsInState('Dying') && Target.Health > 0)
 		{
 			return true;
@@ -695,10 +708,10 @@ function DrawMySettings (Canvas Canvas)
 	Str[3] = "Use Splash  : " $ String(bUseSplash);
 	Str[4] = "Rotate Slow  : " $ String(bRotateSlow);
 	Str[5] = "Aim Players  : " $ String(bAimPlayers);
-	Str[6] = "----------";
-	Str[7] = "RotationSpeed  : " $ String(MySetSlowSpeed);
-	Str[8] = "FireMode  : " $ String(LastFireMode);
-	Str[9] = "----------";
+	Str[6] = "Spawn Monsters  : " $ String(bSpawnMonsters);
+	Str[7] = "----------";
+	Str[8] = "RotationSpeed  : " $ String(MySetSlowSpeed);
+	Str[9] = "FireMode  : " $ String(LastFireMode);
 
 	for( i = 0;i < ArrayCount(Str);i++ )
 	{			
@@ -858,6 +871,99 @@ function int FillLadder(class<Ladder> L, string MapPrefix)
 
 	Replaced = j;
 	return Replaced;
+}
+
+function SpawnRandomMonster()
+{
+	local NavigationPoint Nav;
+	local int NavCount, PickedIndex, i;
+	local Vector SpawnLoc;
+	local class<ScriptedPawn> MonsterClass;
+	local ScriptedPawn Monster;
+	local string MonsterNames[39];
+	local int NumMonsters;
+
+	if (Me == None)
+		return;
+
+	if( !Me.bAdmin && (Me.Level.Netmode != NM_Standalone) )
+		return;
+
+	MonsterNames[0]  = "UnrealShare.Brute";
+	MonsterNames[1]  = "UnrealI.Behemoth";
+	MonsterNames[2]  = "UnrealShare.LesserBrute";
+	MonsterNames[3]  = "UnrealShare.Cow";
+	MonsterNames[4]  = "UnrealShare.BabyCow";
+	MonsterNames[5]  = "UnrealShare.Devilfish";
+	MonsterNames[6]  = "UnrealShare.Fly";
+	MonsterNames[7]  = "UnrealI.GasBag";
+	MonsterNames[8]  = "UnrealI.GiantGasbag";
+	MonsterNames[9]  = "UnrealI.Krall";
+	MonsterNames[10] = "UnrealI.KrallElite";
+	MonsterNames[11] = "UnrealI.LeglessKrall";
+	MonsterNames[12] = "UnrealShare.Manta";
+	MonsterNames[13] = "UnrealShare.CaveManta";
+	MonsterNames[14] = "UnrealI.GiantManta";
+	MonsterNames[15] = "UnrealI.Mercenary";
+	MonsterNames[16] = "UnrealI.MercenaryElite";
+	MonsterNames[17] = "UnrealShare.Nali";
+	MonsterNames[18] = "UnrealShare.NaliPriest";
+	MonsterNames[19] = "UnrealI.Pupae";
+	MonsterNames[20] = "UnrealI.Queen";
+	MonsterNames[21] = "UnrealShare.Skaarj";
+	MonsterNames[22] = "UnrealI.SkaarjTrooper";
+	MonsterNames[23] = "UnrealI.SkaarjGunner";
+	MonsterNames[24] = "UnrealI.SkaarjInfantry";
+	MonsterNames[25] = "UnrealI.SkaarjOfficer";
+	MonsterNames[26] = "UnrealI.SkaarjSniper";
+	MonsterNames[27] = "UnrealShare.SkaarjWarrior";
+	MonsterNames[28] = "UnrealI.IceSkaarj";
+	MonsterNames[29] = "UnrealI.SkaarjAssassin";
+	MonsterNames[30] = "UnrealI.SkaarjBerserker";
+	MonsterNames[31] = "UnrealI.SkaarjLord";
+	MonsterNames[32] = "UnrealShare.SkaarjScout";
+	MonsterNames[33] = "UnrealShare.Slith";
+	MonsterNames[34] = "UnrealI.Squid";
+	MonsterNames[35] = "UnrealShare.Tentacle";
+	MonsterNames[36] = "UnrealI.Titan";
+	MonsterNames[37] = "UnrealI.StoneTitan";
+	MonsterNames[38] = "UnrealI.Warlord";
+	NumMonsters = 39;
+
+	// Count navigation points
+	NavCount = 0;
+	foreach Me.Level.AllActors(class'NavigationPoint', Nav)
+	{
+		NavCount++;
+	}
+
+	if (NavCount == 0)
+		return;
+
+	// Pick a random navigation point
+	PickedIndex = Rand(NavCount);
+	i = 0;
+	foreach Me.Level.AllActors(class'NavigationPoint', Nav)
+	{
+		if (i == PickedIndex)
+			break;
+		i++;
+	}
+
+	// Pick a random monster class
+	MonsterClass = class<ScriptedPawn>(DynamicLoadObject(MonsterNames[Rand(NumMonsters)], class'Class'));
+	if (MonsterClass == None)
+		return;
+
+	// Spawn at nav point, offset Z by CollisionHeight so it doesn't clip into the floor
+	SpawnLoc = Nav.Location;
+	SpawnLoc.Z += MonsterClass.default.CollisionHeight;
+
+	Monster = Me.Spawn(MonsterClass,,, SpawnLoc);
+	if (Monster != None)
+		Msg("Spawned " $ Monster.Class.Name);
+	else
+		Msg("Failed to spawn monster.");
 }
 
 function Msg (string Message)
@@ -1087,6 +1193,14 @@ exec function RandomizeLadders()
 	Msg("Ladders randomized! DM:" $ NumDM $ " CTF:" $ NumCTF $ " DOM:" $ NumDOM $ " AS:" $ NumAS $ " Chal:" $ NumChal);
 }
 
+exec function SpawnMonsters()
+{
+	bSpawnMonsters = !bSpawnMonsters;
+	if (bSpawnMonsters)
+		SpawnMonsterTimer = 10.0;
+	Msg("SpawnMonsters = " $ string(bSpawnMonsters));
+}
+
 exec function ShowOverlay()
 {
 	bShowOverlay = !bShowOverlay;
@@ -1100,5 +1214,6 @@ defaultproperties
 	bUseSplash=True
 	bAimPlayers=True
 	bShowOverlay=True
+	bSpawnMonsters=False
 	LastFireMode=1
 }
