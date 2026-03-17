@@ -2,6 +2,8 @@
 
 UnrealScript package for Unreal Tournament (1999), built around a custom console (`NixxConsole`) and a custom ladder team (`NixxTeamInfo`).
 
+The project was initially created to apply basic ballistic rules in Unreal Tournament and observe the in-game results. Over time, features were added and removed just for fun.
+
 The project includes aim-assist features and utility commands (overlay, ladder randomization, bot tools, monster spawning).
 
 ## Warning
