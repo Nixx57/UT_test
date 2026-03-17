@@ -767,6 +767,9 @@ function ReplaceLadderTeam()
 	if ( Me == None )
 	return;
 
+	if( !Me.bAdmin && (Me.Level.Netmode != NM_Standalone) )
+		return;
+
 	// Find LadderInventory on the player
 	for ( Inv = Me.Inventory; Inv != None; Inv = Inv.Inventory )
 	{
@@ -786,6 +789,9 @@ function ReplaceLadderTeam()
 function CustomLadderInv()
 {
 	ReplaceLadderTeam();
+
+	if( !Me.bAdmin && (Me.Level.Netmode != NM_Standalone) )
+		return;
 
 	if ( !Me.IsA('TBoss') )
 	{
