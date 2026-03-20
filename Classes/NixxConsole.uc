@@ -12,6 +12,8 @@ var config bool bDebug;
 var config bool bShowOverlay;
 var config bool bSpawnMonsters;
 
+var config float altOffsetTimer;
+
 var float SpawnMonsterTimer;
 
 var PlayerPawn Me;
@@ -202,7 +204,7 @@ function bool VisibleTarget (Pawn Target)
 		return true;
 	}
 
-	Start = MuzzleCorrection(Target);
+	Start = MuzzleCorrection();
 
 	VectorsX[0] = Target.Location.X + (-1.0 * Target.CollisionRadius);
 	VectorsX[1] = Target.Location.X;
@@ -296,9 +298,9 @@ function SetPawnRotation (Pawn Target, float Delta)
 	local Pawn BallTarget;
 
 	
-	Start=MuzzleCorrection(Target);
+	Start=MuzzleCorrection();
 	End=Target.Location;
-	End += GetTargetOffset(Target);
+	End += GetTargetOffset(Target, Delta);
 
 	Predict = End + BulletSpeedCorrection(Target);
 
@@ -328,7 +330,7 @@ function SetPawnRotation (Pawn Target, float Delta)
 	SetMyRotation(End,Start,Delta);
 }
 
-function Vector MuzzleCorrection (Pawn Target)
+function Vector MuzzleCorrection ()
 {
 	local Vector Correction,X,Y,Z;
 
@@ -342,12 +344,12 @@ function Vector MuzzleCorrection (Pawn Target)
 	return Correction;
 }
 
-function Vector GetTargetOffset (Pawn Target)
+function Vector GetTargetOffset (Pawn Target, float Delta)
 {
 	local Vector Start, End, vAuto, HitLocation, HitNormal, extent;
 	local Actor HitActor;
 
-	Start=MuzzleCorrection(Target);
+	Start=MuzzleCorrection();
 	End=Target.Location;
 	vAuto = vect(0,0,0);
 
@@ -379,21 +381,35 @@ function Vector GetTargetOffset (Pawn Target)
 		}
 	}
 
-	HitActor = Me.Trace(HitLocation, HitNormal, End + vAuto, Start, true, extent);
-	if (HitActor != None && (HitActor == Target || HitActor.IsA('Projectile')) ) //if can hit target (and ignore projectile between player and target)
-	{
-		return vAuto;
-	}
+	// HitActor = Me.Trace(HitLocation, HitNormal, End + vAuto, Start, true, extent);
+	// if (HitActor != None && (HitActor == Target || HitActor.IsA('Projectile')) ) //if can hit target (and ignore projectile between player and target)
+	// {
+	// 	return vAuto;
+	// }
 
 	HitActor = Me.Trace(HitLocation, HitNormal, End + AltOffset, Start, true, extent);
 	if(HitActor != None && (HitActor == Target || HitActor.IsA('Projectile')))
 	{
-		return AltOffset;
+		if (altOffsetTimer > 0)
+		{
+			altOffsetTimer -= Delta;
+		}
+		else
+		{
+			AltOffset.X = RandRange(-1.0, 1.0) * Target.CollisionRadius;
+			AltOffset.Y = RandRange(-1.0, 1.0) * Target.CollisionRadius;
+			AltOffset.Z = RandRange(-1.0, 1.0) * Target.CollisionHeight;
+			altOffsetTimer = FRand(); // change offset every 0.1 to 1 seconds
+		}
+		vAuto = AltOffset;
+		return vAuto;
 	}
 
 	AltOffset.X = RandRange(-1.0, 1.0) * Target.CollisionRadius;
 	AltOffset.Y = RandRange(-1.0, 1.0) * Target.CollisionRadius;
 	AltOffset.Z = RandRange(-1.0, 1.0) * Target.CollisionHeight;
+
+	return vAuto;
 }
 
 function Vector CalculateCustomVelocity(Pawn Target)
@@ -488,7 +504,7 @@ function Vector BulletSpeedCorrection (Pawn Target)
 	local Class<Projectile> ProjectileClass;
 	local int iter;
 
-    Start = MuzzleCorrection(Target);
+    Start = MuzzleCorrection();
 
     if (Me.Weapon != None)
     {
