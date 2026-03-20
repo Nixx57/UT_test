@@ -346,7 +346,7 @@ function Vector MuzzleCorrection ()
 
 function Vector GetTargetOffset (Pawn Target, float Delta)
 {
-	local Vector Start, End, vAuto, HitLocation, HitNormal, extent;
+	local Vector Start, End, vAuto, HitLocation, HitNormal, extent, newAltOffset;
 	local Actor HitActor;
 
 	Start=MuzzleCorrection();
@@ -396,10 +396,16 @@ function Vector GetTargetOffset (Pawn Target, float Delta)
 		}
 		else
 		{
-			AltOffset.X = RandRange(-1.0, 1.0) * Target.CollisionRadius;
-			AltOffset.Y = RandRange(-1.0, 1.0) * Target.CollisionRadius;
-			AltOffset.Z = RandRange(-1.0, 1.0) * Target.CollisionHeight;
-			altOffsetTimer = FRand(); // change offset every 0.1 to 1 seconds
+			newAltOffset.X = RandRange(-1.0, 1.0) * Target.CollisionRadius;
+			newAltOffset.Y = RandRange(-1.0, 1.0) * Target.CollisionRadius;
+			newAltOffset.Z = RandRange(-1.0, 1.0) * Target.CollisionHeight;
+
+			HitActor = Me.Trace(HitLocation, HitNormal, End + newAltOffset, Start, true, extent);
+			if (HitActor != None && (HitActor == Target || HitActor.IsA('Projectile')))
+			{
+				AltOffset = newAltOffset;
+				altOffsetTimer = FRand(); // change offset every 0 to 1 seconds
+			}
 		}
 		vAuto = AltOffset;
 		return vAuto;
@@ -573,137 +579,37 @@ function Vector BulletSpeedCorrection (Pawn Target)
 
 function SetMyRotation (Vector End, Vector Start, float Delta)
 {
-    local Rotator Rot;
+	local Rotator DesiredRot, CurrentRot;
+	local int DeltaYaw, DeltaPitch;
+	local int SpeedDiv;
 
-	Rot=Normalize(rotator(End - Start));
+	DesiredRot = Normalize(rotator(End - Start));
+	CurrentRot = Normalize(Me.ViewRotation);
 
 	if(bRotateSlow)
 	{
-		Rot=RotateSlow(Normalize(Me.ViewRotation),Rot,Delta);
-	}
-	
-	Me.ViewRotation=Rot;
-}
+		DeltaYaw = (DesiredRot.Yaw - CurrentRot.Yaw) & 65535;
+		if (DeltaYaw > 32767)
+			DeltaYaw -= 65536;
 
-function Rotator RotateSlow (Rotator RotA, Rotator RotB, float Delta)
-{
-	local Rotator RotC;
-	local int Pitch;
-	local int Yaw;
-	local int Roll;
-	local bool Bool1;
-	local bool Bool2;
-	local bool Bool3;
-	local int Step;
+		DeltaPitch = (DesiredRot.Pitch - CurrentRot.Pitch) & 65535;
+		if (DeltaPitch > 32767)
+			DeltaPitch -= 65536;
 
-	Step = MySetSlowSpeed * Delta * 60.0; // framerate-independent (normalized to 60fps)
-	if (Step < 1)
-		Step = 1;
+		SpeedDiv = MySetSlowSpeed;
+		if (SpeedDiv < 1)
+			SpeedDiv = 1;
 
-	Bool1=Abs(RotA.Pitch - RotB.Pitch) <= Step;
-	Bool2=Abs(RotA.Yaw - RotB.Yaw) <= Step;
-	Bool3=Abs(RotA.Roll - RotB.Roll) <= Step;
-	
-	if ( RotA.Pitch < RotB.Pitch )
-	{
-		Pitch=1;
-	} 
-	else 
-	{
-		Pitch=-1;
-	}
-	
-	if ( (RotA.Yaw > 0) && (RotB.Yaw > 0) )
-	{
-		if ( RotA.Yaw < RotB.Yaw )
+		if (Delta > 0)
 		{
-			Yaw=1;
-		} 
-		else 
-		{
-			Yaw=-1;
-		}
-	} 
-	else 
-	{
-		if ( (RotA.Yaw < 0) && (RotB.Yaw < 0) )
-		{
-			if ( RotA.Yaw < RotB.Yaw )
-			{
-				Yaw=1;
-			} 
-			else 
-			{
-				Yaw=-1;
-			}
-		} 
-		else 
-		{
-			if ( (RotA.Yaw < 0) && (RotB.Yaw > 0) )
-			{
-				if ( Abs(RotA.Yaw) + RotB.Yaw < 32768 )
-				{
-					Yaw=1;
-				} 
-				else 
-				{
-					Yaw=-1;
-				}
-			} 
-			else 
-			{
-				if ( (RotA.Yaw > 0) && (RotB.Yaw < 0) )
-				{
-					if ( RotA.Yaw + Abs(RotB.Yaw) < 32768 )
-					{
-						Yaw=-1;
-					} 
-					else 
-					{
-						Yaw=1;
-					}
-				}
-			}
+			Me.aTurn = float(DeltaYaw) / float(SpeedDiv);
+			Me.aLookUp = float(DeltaPitch) / float(SpeedDiv);
 		}
 	}
-	
-	if ( RotA.Roll < RotB.Roll )
+	else
 	{
-		Roll=1;
-	} 
-	else 
-	{
-		Roll=-1;
+		Me.ViewRotation = DesiredRot;
 	}
-	
-	if ( !Bool1 )
-	{
-		RotC.Pitch=RotA.Pitch + Pitch * Step;
-	} 
-	else 
-	{
-		RotC.Pitch=RotB.Pitch;
-	}
-	
-	if ( !Bool2 )
-	{
-		RotC.Yaw=RotA.Yaw + Yaw * Step;
-	} 
-	else 
-	{
-		RotC.Yaw=RotB.Yaw;
-	}
-	
-	if ( !Bool3 )
-	{
-		RotC.Roll=RotA.Roll + Roll * Step;
-	}
-	else 
-	{
-		RotC.Roll=RotB.Roll;
-	}
-	
-	return Normalize(RotC);
 }
 
 //================================================================================
