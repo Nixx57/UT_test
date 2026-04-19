@@ -32,7 +32,7 @@ struct PositionData
     var float Time;
 };
 
-var PositionData PreviousLocations[32];
+var PositionData PreviousLocations[64];
 var int LocationIndex;
 
 // Ladder randomization
@@ -420,24 +420,69 @@ function Vector GetTargetOffset (Pawn Target, float Delta)
 
 function Vector CalculateCustomVelocity(Pawn Target)
 {
-    local Vector Velocity, AverageVelocity;
-    local float TimeDifference, Weight, TotalWeight;
-	local int i, ValidSamples;
-    
+    local Vector Velocity, AverageVelocity, RoughAverage;
+    local float TimeDifference, Weight, TotalWeight, SampleAge, AvgSpeed;
+	local int i, idx0, idx1, ValidSamples, NewestIndex;
+	local float TimeWindow, NewestTime;
+
+	TimeWindow = 1.5;
     AverageVelocity = vect(0,0,0);
 	ValidSamples = 0;
 	TotalWeight = 0;
-    
-    for(i=0; i < ArrayCount(PreviousLocations)-1; i++)
+
+	NewestIndex = (LocationIndex - 1 + ArrayCount(PreviousLocations)) % ArrayCount(PreviousLocations);
+	NewestTime = PreviousLocations[NewestIndex].Time;
+
+	if (NewestTime <= 0)
+		return vect(0,0,0);
+
+	// Pass 1: rough weighted average
+    for(i = 0; i < ArrayCount(PreviousLocations) - 1; i++)
     {
-        TimeDifference = PreviousLocations[(LocationIndex+i+1)% ArrayCount(PreviousLocations)].Time - PreviousLocations[(LocationIndex+i)% ArrayCount(PreviousLocations)].Time;
-    	if (TimeDifference > 0)
+		idx0 = (LocationIndex + i) % ArrayCount(PreviousLocations);
+		idx1 = (LocationIndex + i + 1) % ArrayCount(PreviousLocations);
+        TimeDifference = PreviousLocations[idx1].Time - PreviousLocations[idx0].Time;
+		SampleAge = NewestTime - PreviousLocations[idx1].Time;
+
+    	if (TimeDifference > 0 && SampleAge >= 0 && SampleAge <= TimeWindow)
     	{
-	    	Velocity = (PreviousLocations[(LocationIndex+i+1)% ArrayCount(PreviousLocations)].Location - PreviousLocations[(LocationIndex+i)% ArrayCount(PreviousLocations)].Location) / TimeDifference;
-			Weight = float(i + 1); // newer samples get higher weight
+	    	Velocity = (PreviousLocations[idx1].Location - PreviousLocations[idx0].Location) / TimeDifference;
+			Weight = 1.0 / (1.0 + SampleAge * 2.0);
 	    	AverageVelocity += Velocity * Weight;
 			TotalWeight += Weight;
 			ValidSamples++;
+        }
+    }
+
+	if (ValidSamples < 3)
+		return vect(0,0,0);
+
+	RoughAverage = AverageVelocity / TotalWeight;
+	AvgSpeed = VSize(RoughAverage);
+
+	// Pass 2: reject outlier spikes and recompute
+	AverageVelocity = vect(0,0,0);
+	ValidSamples = 0;
+	TotalWeight = 0;
+
+	for(i = 0; i < ArrayCount(PreviousLocations) - 1; i++)
+    {
+		idx0 = (LocationIndex + i) % ArrayCount(PreviousLocations);
+		idx1 = (LocationIndex + i + 1) % ArrayCount(PreviousLocations);
+        TimeDifference = PreviousLocations[idx1].Time - PreviousLocations[idx0].Time;
+		SampleAge = NewestTime - PreviousLocations[idx1].Time;
+
+    	if (TimeDifference > 0 && SampleAge >= 0 && SampleAge <= TimeWindow)
+    	{
+	    	Velocity = (PreviousLocations[idx1].Location - PreviousLocations[idx0].Location) / TimeDifference;
+
+			if (VSize(Velocity - RoughAverage) <= AvgSpeed * 2.0 + 100.0)
+			{
+				Weight = 1.0 / (1.0 + SampleAge * 2.0);
+				AverageVelocity += Velocity * Weight;
+				TotalWeight += Weight;
+				ValidSamples++;
+			}
         }
     }
 
@@ -455,11 +500,54 @@ function Vector CalculateCustomVelocity(Pawn Target)
 
 function Vector CalculateCustomAcceleration(Pawn Target)
 {
-    local Vector Acceleration, AverageAcceleration, CurrentVelocity, PreviousVelocity;
-    local float TimeDifferenceCurrent, TimeDifferencePrevious, Weight, TotalWeight;
-	local int i, CurrentDataIndex, PreviousDataIndex, PreviousPreviousDataIndex, ValidSamples;
+    local Vector Acceleration, AverageAcceleration, RoughAverage, CurrentVelocity, PreviousVelocity;
+    local float TimeDifferenceCurrent, TimeDifferencePrevious, Weight, TotalWeight, SampleAge, AvgAccel;
+	local int i, CurrentDataIndex, PreviousDataIndex, PreviousPreviousDataIndex, ValidSamples, NewestIndex;
+	local float TimeWindow, NewestTime;
 
+	TimeWindow = 1.5;
     AverageAcceleration = vect(0,0,0);
+	ValidSamples = 0;
+	TotalWeight = 0;
+
+	NewestIndex = (LocationIndex - 1 + ArrayCount(PreviousLocations)) % ArrayCount(PreviousLocations);
+	NewestTime = PreviousLocations[NewestIndex].Time;
+
+	if (NewestTime <= 0)
+		return vect(0,0,0);
+
+	// Pass 1: rough weighted average
+    for(i = 0; i < ArrayCount(PreviousLocations) - 2; i++)
+    {
+        CurrentDataIndex = (LocationIndex - 1 - i + ArrayCount(PreviousLocations)) % ArrayCount(PreviousLocations);
+        PreviousDataIndex = (LocationIndex - 2 - i + ArrayCount(PreviousLocations)) % ArrayCount(PreviousLocations);
+        PreviousPreviousDataIndex = (LocationIndex - 3 - i + ArrayCount(PreviousLocations)) % ArrayCount(PreviousLocations);
+
+        TimeDifferenceCurrent  = PreviousLocations[CurrentDataIndex].Time - PreviousLocations[PreviousDataIndex].Time;
+        TimeDifferencePrevious = PreviousLocations[PreviousDataIndex].Time - PreviousLocations[PreviousPreviousDataIndex].Time;
+		SampleAge = NewestTime - PreviousLocations[CurrentDataIndex].Time;
+
+        if (TimeDifferenceCurrent > 0 && TimeDifferencePrevious > 0 && SampleAge >= 0 && SampleAge <= TimeWindow)
+        {
+            CurrentVelocity  = (PreviousLocations[CurrentDataIndex].Location - PreviousLocations[PreviousDataIndex].Location) / TimeDifferenceCurrent;
+            PreviousVelocity = (PreviousLocations[PreviousDataIndex].Location - PreviousLocations[PreviousPreviousDataIndex].Location) / TimeDifferencePrevious;
+
+            Acceleration = (CurrentVelocity - PreviousVelocity) / ((TimeDifferenceCurrent + TimeDifferencePrevious) / 2);
+			Weight = 1.0 / (1.0 + SampleAge * 2.0);
+            AverageAcceleration += Acceleration * Weight;
+			TotalWeight += Weight;
+			ValidSamples++;
+        }
+    }
+
+	if (ValidSamples < 3)
+		return vect(0,0,0);
+
+	RoughAverage = AverageAcceleration / TotalWeight;
+	AvgAccel = VSize(RoughAverage);
+
+	// Pass 2: reject outlier spikes and recompute
+	AverageAcceleration = vect(0,0,0);
 	ValidSamples = 0;
 	TotalWeight = 0;
 
@@ -469,24 +557,24 @@ function Vector CalculateCustomAcceleration(Pawn Target)
         PreviousDataIndex = (LocationIndex - 2 - i + ArrayCount(PreviousLocations)) % ArrayCount(PreviousLocations);
         PreviousPreviousDataIndex = (LocationIndex - 3 - i + ArrayCount(PreviousLocations)) % ArrayCount(PreviousLocations);
 
-        if (CurrentDataIndex >= 0 && CurrentDataIndex < ArrayCount(PreviousLocations) &&
-            PreviousDataIndex >= 0 && PreviousDataIndex < ArrayCount(PreviousLocations) &&
-            PreviousPreviousDataIndex >= 0 && PreviousPreviousDataIndex < ArrayCount(PreviousLocations))
+        TimeDifferenceCurrent  = PreviousLocations[CurrentDataIndex].Time - PreviousLocations[PreviousDataIndex].Time;
+        TimeDifferencePrevious = PreviousLocations[PreviousDataIndex].Time - PreviousLocations[PreviousPreviousDataIndex].Time;
+		SampleAge = NewestTime - PreviousLocations[CurrentDataIndex].Time;
+
+        if (TimeDifferenceCurrent > 0 && TimeDifferencePrevious > 0 && SampleAge >= 0 && SampleAge <= TimeWindow)
         {
-            TimeDifferenceCurrent  = PreviousLocations[CurrentDataIndex].Time - PreviousLocations[PreviousDataIndex].Time;
-            TimeDifferencePrevious = PreviousLocations[PreviousDataIndex].Time - PreviousLocations[PreviousPreviousDataIndex].Time;
+            CurrentVelocity  = (PreviousLocations[CurrentDataIndex].Location - PreviousLocations[PreviousDataIndex].Location) / TimeDifferenceCurrent;
+            PreviousVelocity = (PreviousLocations[PreviousDataIndex].Location - PreviousLocations[PreviousPreviousDataIndex].Location) / TimeDifferencePrevious;
 
-            if (TimeDifferenceCurrent > 0 && TimeDifferencePrevious > 0)
-            {
-                CurrentVelocity  = (PreviousLocations[CurrentDataIndex].Location - PreviousLocations[PreviousDataIndex].Location) / TimeDifferenceCurrent;
-                PreviousVelocity = (PreviousLocations[PreviousDataIndex].Location - PreviousLocations[PreviousPreviousDataIndex].Location) / TimeDifferencePrevious;
+            Acceleration = (CurrentVelocity - PreviousVelocity) / ((TimeDifferenceCurrent + TimeDifferencePrevious) / 2);
 
-                Acceleration = (CurrentVelocity - PreviousVelocity) / ((TimeDifferenceCurrent + TimeDifferencePrevious) / 2);
-				Weight = float(ArrayCount(PreviousLocations) - 1 - i); // i=0 is newest, gets highest weight
-                AverageAcceleration += Acceleration * Weight;
+			if (VSize(Acceleration - RoughAverage) <= AvgAccel * 2.0 + 200.0)
+			{
+				Weight = 1.0 / (1.0 + SampleAge * 2.0);
+				AverageAcceleration += Acceleration * Weight;
 				TotalWeight += Weight;
 				ValidSamples++;
-            }
+			}
         }
     }
 
